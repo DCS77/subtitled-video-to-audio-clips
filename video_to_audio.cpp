@@ -1,8 +1,8 @@
 /*
-/	Author: Daniel Smit
+//	Author: Daniel Smit
 	Date: 21 Feb 2017
-/	Title: Subtitled video to audio clips
-/	Description: Extracts audio from a video file. Reads subtitle files to select snippet times of each conversation. Creates a txt file with text contained in each snippet of audio.
+//	Title: Subtitled video to audio clips
+//	Description: Extracts audio from a video file. Reads subtitle files to select snippet times of each conversation. Creates a txt file with text contained in each snippet of audio.
 */
 
 #include <iostream>
