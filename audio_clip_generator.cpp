@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <regex>
 
 using namespace std;
 
@@ -50,16 +51,36 @@ int checkAudioFormat(){
 }
 
 int getTimestampStart(string line){
-	return 30;
+
+	string hours_str{line.at(0), line.at(1)};
+	string minutes_str{line.at(3), line.at(4)};
+	string seconds_str{line.at(6), line.at(7)};
+
+	int hours = stoi(hours_str);
+	int minutes = stoi(minutes_str);
+	int seconds = stoi(seconds_str);
+
+	return floor(hours*60*60 + minutes*60 + seconds);
 }
 
 int getTimestampEnd(string line){
-	return 35;
+	string hours_str{line.at(17), line.at(18)};
+	string minutes_str{line.at(20), line.at(21)};
+	string seconds_str{line.at(23), line.at(24)};
+
+	int hours = stoi(hours_str);
+	int minutes = stoi(minutes_str);
+	int seconds = stoi(seconds_str);
+
+	return ceil(hours*60*60 + minutes*60 + seconds);
 }
 
 int matchesTimestampFormat(string line){
-	/* 00:00:16,391 --> 00:00:19,476 */
-	return 1;
+	/* "00:00:16,391 --> 00:00:19,476" */
+	if (regex_match (line, regex("([0-9]{2}(:)){2}[0-9]{2}(,)[0-9]{3}( --> )([0-9]{2}(:)){2}[0-9]{2}(,)[0-9]{3}") )){
+		return 1;
+	}
+	return 0;
 }
 
 int matchesLineFormat(string line){
@@ -197,20 +218,20 @@ int main(int argc, char* argv[]){
 		//cin>>c;
 	}
 
-	/*
+	
 	cout << "srtLines.size(): " << srtLines.size() << endl;
 
 	for(int i=0; i<srtLines.size(); i++){
-		char c;
-		cin>>c;
+		//char c;
+		//cin>>c;
 		cout << "start: " << srtLines[i].start << endl;
-		cin>>c;
+		//cin>>c;
 		cout << "end: " <<  srtLines[i].end << endl;
-		cin>>c;
+		//cin>>c;
 		cout << "message 0: " <<  srtLines[i].messages[0] << endl;
 		
 	}
-	*/
+	
 
 	//cout << "TP7" << endl;
 	
