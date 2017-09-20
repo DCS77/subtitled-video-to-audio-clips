@@ -11,6 +11,7 @@
 #include <vector>
 #include <algorithm>
 #include <regex>
+#include <cstdlib>
 
 using namespace std;
 
@@ -22,6 +23,10 @@ int getTimestampEnd(string line);
 int matchesTimestampFormat(string line);
 int matchesLineFormat(string line);
 int matchesBlankLine(string line);
+vector<srtLine> getSrtLines(char* inputSrt);
+void clipAudio(char* inputAudio, vector<srtLine> srtLines, char* outputFolder, int secondsOffset, int extraSeconds);
+void generateTextToSpeech(vector<srtLine> srtLines, char* outputFolder);
+void mergeTTSandAudio(vector<srtLine> srtLines, char* outputFolder);
 
 struct srtLine {
 	int start;
@@ -95,32 +100,17 @@ int matchesBlankLine(string line){
 	return 0;
 }
 
-
-int main(int argc, char* argv[]){
-
-	if(argc < 3){
-		//cout << "Not enough input arguments. Usage: ./audio_clip_generator input_audio.mp3 input_subtitles.srt" << endl;
-		return -1;
-	}
-
-	int res = initialChecks(argv[1], argv[2]);
-	if(res < 0){
-		return res;
-	}
-
-	ifstream srtStream(argv[2]);	
-
+vector<srtLine> getSrtLines(char* inputSrt){
+	ifstream srtStream(inputSrt);
 	
 	int mode = 0; /* mode: 0 if haven't started yet, or looking for sequence number; 1 if found next sequence number; 2 if found timestamp; 3 if found text subtitle; back to 0 if found blank line */
 	int currentIdx = 1; /* currentIdx: Current srt index. Starts at 1 as per specification. Incremented for each new srt */
 	int stringIdx = 0;
 	string line;
-	//srtLine * srtLines = new srtLine[1];
 	vector<srtLine> srtLines;
 
 	int startPoint;
 	int endPoint;
-	//string messages[5]; /* Assume max 5 lines of text per timestamp */
 	vector<string> messages;
 
 	while(getline(srtStream, line)){
@@ -137,13 +127,10 @@ int main(int argc, char* argv[]){
 
 			/* Check for srt index */
 			case 0:
-			//cout << "TP3 line: " << line << endl;
-			//cout << "CurrentIdx: " << currentIdx << endl;
 			if(!matchesBlankLine(line)){
 			//if(line.compare(to_string(currentIdx)) == 0){
 				/* Found next srt index */
 				mode = 1;
-				//cout << "Found sequence number. Mode updated." << endl;
 			} else {
 				continue;
 			}
@@ -152,8 +139,6 @@ int main(int argc, char* argv[]){
 
 			/* Check for timestamp */
 			case 1:
-			//cout << "TP4" << endl;
-			//cout << "Timestamp: " << currentIdx << endl;
 			if(matchesTimestampFormat(line)){
 				/* Found timestamp */
 				mode = 2;
@@ -161,15 +146,12 @@ int main(int argc, char* argv[]){
 				/* Get timestamp start and end in seconds */
 				startPoint = getTimestampStart(line);
 				endPoint = getTimestampEnd(line);
-
-				//cout << "Start: " << startPoint << ", endPoint: " << endPoint << ". Mode updated." << endl;
 			}
 			break;
 
 
 			/* Check for subtitle message - Note - there may be multiple lines */
 			case 2:
-			//cout << "TP5" << endl;
 			if(matchesLineFormat(line) && !matchesBlankLine(line)){
 				/* Fetch line message */
 				messages.push_back(line);
@@ -186,9 +168,7 @@ int main(int argc, char* argv[]){
 
 			/* Check for blank line or extra message */
 			case 3:
-			//cout << "TP6" << endl;
 			if(matchesBlankLine(line)){
-				
 
 				srtLine srtLineTemp;
 				
@@ -196,11 +176,8 @@ int main(int argc, char* argv[]){
 				srtLineTemp.start = startPoint;
 				srtLineTemp.end = endPoint;
 
-				//cout << "messages.size(): " << messages.size() << endl;
-
 				for(int i=0; i<messages.size(); i++){
 					srtLineTemp.messages.push_back(messages[i]);
-					//cout << "messages[i]: " <<  messages[i] << endl;
 				}
 				srtLines.push_back(srtLineTemp);
 
@@ -218,7 +195,10 @@ int main(int argc, char* argv[]){
 		//cin>>c;
 	}
 
-	
+	return srtLines;
+}
+
+void displaySrtLines(vector<srtLine> srtLines){
 	cout << "srtLines.size(): " << srtLines.size() << endl;
 
 	for(int i=0; i<srtLines.size(); i++){
@@ -231,10 +211,116 @@ int main(int argc, char* argv[]){
 		cout << "message 0: " <<  srtLines[i].messages[0] << endl;
 		
 	}
-	
+}
 
-	//cout << "TP7" << endl;
+void clipAudio(char* inputAudio, vector<srtLine> srtLines, char* outputFolder, int secondsOffset, int extraSeconds){
 	
+	string inputAudioStr(inputAudio);
+	string outputFolderStr(outputFolder);
+
+	string command = "mkdir -p " + outputFolderStr;
+	system(command.c_str());
+
+	char commandChr[300];
+
+	int startClip;
+	int endClip;
+	
+	for(int i=0; i<srtLines.size(); i++){
+		startClip = srtLines[i].start + secondsOffset - extraSeconds;
+		endClip = srtLines[i].end + secondsOffset + extraSeconds;
+
+		if(startClip < 0){
+			startClip = 0;
+		}
+
+		sprintf(commandChr, "ffmpeg -y -i %s -ss %d -to %d %s/output-%d.wav -loglevel \"error\"", inputAudioStr.c_str(), startClip, endClip, outputFolderStr.c_str(), i);
+		//cout << "Running command: " << commandChr << endl;
+		system(commandChr);
+	}
+}
+
+void generateTextToSpeech(vector<srtLine> srtLines, char* outputFolder){
+
+	string outputFolderStr(outputFolder);
+	string command = "mkdir -p " + outputFolderStr;
+	system(command.c_str());
+	string textMessage;
+
+	char commandChr[300];
+
+	for(int i=0; i<srtLines.size(); i++){
+		textMessage = "";
+		for(int j=0; j<srtLines[i].messages.size(); j++){
+			textMessage = textMessage + srtLines[i].messages[j];
+		}
+		//sprintf(commandChr, "espeak \"%s\" --stdout > %s/tts-output-%d.wav", textMessage.c_str(), outputFolderStr.c_str(), i);
+		sprintf(commandChr, "espeak \"%s\" --stdout > %s/tts-output-%d.wav", textMessage.c_str(), outputFolder, i);
+		//cout << "Running command: " << commandChr << endl;
+		system(commandChr);
+	}
+}
+
+void mergeTTSandAudio(vector<srtLine> srtLines, char* outputFolder){
+
+	char ttsFile[300];
+	char audioFile[300];
+	char outputFile[300];
+	string sil_audio = "silent_audio_2s.wav";
+
+	char commandChr[300];
+
+	for(int i=0; i<srtLines.size(); i++){
+	
+		sprintf(ttsFile, "%s/tts-output-%d.wav", outputFolder, i);
+		sprintf(audioFile, "%s/output-%d.wav", outputFolder, i);
+		sprintf(outputFile, "%s/tts-srt-out-%d.wav", outputFolder, i);
+
+		/* Merge subtitle text-to-speech and extracted audio together */ 
+		/* Overwrite existing output files with same name without prompt */
+		sprintf(commandChr, "ffmpeg -y -i %s -i %s -i %s -i %s -filter_complex '[0:0][1:0][2:0][3:0]concat=n=4:v=0:a=1[out]' -map '[out]' %s -loglevel \"error\"", ttsFile, sil_audio.c_str(), audioFile, sil_audio.c_str(), outputFile);
+
+		//cout << "Running command: ffmpeg concat: " << i << endl;
+		system(commandChr);
+	}
+}
+
+
+int main(int argc, char* argv[]){
+
+	if(argc < 4){
+		cout << "Not enough input arguments. Usage: ./audio_clip_generator input_audio.wav input_subtitles.srt output_folder" << endl;
+		cout << "You can also specify the audio offset (integer) and extra seconds (integer) before and after each audio clip. Usage: ./audio_clip_generator input_audio.wav input_subtitles.srt output_folder audio_offset extra_seconds" << endl;
+		return -1;
+	}
+
+	int secondsOffset = 0;
+
+	if(argc > 4){
+		secondsOffset = atoi(argv[4]);
+	}
+
+	int extraSeconds = 0;
+
+	if(argc > 5){
+		extraSeconds = atoi(argv[5]);
+	}
+
+	int res = initialChecks(argv[1], argv[2]);
+	if(res < 0){
+		return res;
+	}
+
+	vector<srtLine> srtLines = getSrtLines(argv[2]);
+	
+	displaySrtLines(srtLines);
+
+	clipAudio(argv[1], srtLines, argv[3], secondsOffset, extraSeconds);
+
+	generateTextToSpeech(srtLines, argv[3]);
+	
+	mergeTTSandAudio(srtLines, argv[3]);
+
 	return 0;
 }
 

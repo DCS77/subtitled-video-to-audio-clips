@@ -10,7 +10,8 @@ Objective: Extract audio from a video file. Read subtitle files to select snippe
 
 Requirements:
 
-[1] - ffmpeg - https://www.ffmpeg.org/
+[1] - ffmpeg - https://www.ffmpeg.org/ - sudo apt install ffmpeg
+[2] - espeak - http://espeak.sourceforge.net/ - sudo apt install espeak
 
 ######################################
 
