@@ -20,19 +20,21 @@ struct srtLine;
 int initialChecks(char* inputAudio, char* inputSrt);
 int checkAudioFormat();
 bool checkInputs(bool verbose, bool foundAudioFile, bool foundSubtitleFile, bool foundOutputFolder, bool foundAudioOffset, bool foundExtraSeconds);
-int getTimestampStart(string line);
-int getTimestampEnd(string line);
+int getTimestampStartSec(string line);
+int getTimestampEndSec(string line);
+string getTimestampStart(string line, float audioOffset, float extraSeconds);
+string getTimestampEnd(string line, float audioOffset, float extraSeconds);
 int matchesTimestampFormat(string line);
 int matchesLineFormat(string line);
 int matchesBlankLine(string line);
-vector<srtLine> getSrtLines(char* inputSrt);
+vector<srtLine> getSrtLines(char* inputSrt, float audioOffset, float extraSeconds);
 void clipAudio(char* inputAudio, vector<srtLine> srtLines, char* outputFolder, int secondsOffset, int extraSeconds);
 void generateTextToSpeech(vector<srtLine> srtLines, char* outputFolder);
 void mergeTTSandAudio(vector<srtLine> srtLines, char* outputFolder);
 
 struct srtLine {
-	int start;
-	int end;
+	string start;
+	string end;
 	vector<string> messages;
 };
 
@@ -91,7 +93,7 @@ bool checkInputs(bool verbose, bool foundAudioFile, bool foundSubtitleFile, bool
 	return 1;
 }
 
-int getTimestampStart(string line){
+int getTimestampStartSec(string line){
 
 	string hours_str{line.at(0), line.at(1)};
 	string minutes_str{line.at(3), line.at(4)};
@@ -104,7 +106,7 @@ int getTimestampStart(string line){
 	return floor(hours*60*60 + minutes*60 + seconds);
 }
 
-int getTimestampEnd(string line){
+int getTimestampEndSec(string line){
 	string hours_str{line.at(17), line.at(18)};
 	string minutes_str{line.at(20), line.at(21)};
 	string seconds_str{line.at(23), line.at(24)};
@@ -114,6 +116,76 @@ int getTimestampEnd(string line){
 	int seconds = stoi(seconds_str);
 
 	return ceil(hours*60*60 + minutes*60 + seconds);
+}
+
+string getTimestampStart(string line, float audioOffset, float extraSeconds){
+
+	string hours_str{line.at(0), line.at(1)};
+	string minutes_str{line.at(3), line.at(4)};
+	string seconds_str{line.at(6), line.at(7)};
+	string mili_str{line.at(9), line.at(10), line.at(11)};
+
+	int hours = stoi(hours_str);
+	int minutes = stoi(minutes_str);
+	int seconds = stoi(seconds_str);
+	int mili = stoi(mili_str);
+
+	if(audioOffset - extraSeconds != 0){
+
+		int totalMili = hours*3600000 + minutes*60000 + seconds*1000 + mili;
+		totalMili += (audioOffset - extraSeconds)*1000;
+
+		if(totalMili < 0){
+			totalMili = 0;
+		}
+
+		hours = floor(totalMili / 3600000);
+		minutes = floor((totalMili - hours*3600000) / 60000);
+		seconds = floor((totalMili - hours*3600000 - minutes*60000) / 1000);
+		mili = floor((totalMili - hours*3600000 - minutes*60000 - seconds*1000));
+	}
+
+	char newTimestamp[30];
+	sprintf(newTimestamp, "%02d:%02d:%02d.%03d", hours, minutes, seconds, mili);
+	string returnTimestamp(newTimestamp);
+
+	return returnTimestamp;
+}
+
+string getTimestampEnd(string line, float audioOffset, float extraSeconds){
+
+	string hours_str{line.at(17), line.at(18)};
+	string minutes_str{line.at(20), line.at(21)};
+	string seconds_str{line.at(23), line.at(24)};
+	string mili_str{line.at(26), line.at(27), line.at(28)};
+
+	int hours = stoi(hours_str);
+	int minutes = stoi(minutes_str);
+	int seconds = stoi(seconds_str);
+	int mili = stoi(mili_str);
+
+
+	if(audioOffset + extraSeconds != 0){
+
+		int totalMili = hours*3600000 + minutes*60000 + seconds*1000 + mili;
+		totalMili += (audioOffset + extraSeconds)*1000;
+
+		if(totalMili < 0){
+			totalMili = 0;
+		}
+
+		hours = floor(totalMili / 3600000);
+		minutes = floor((totalMili - hours*3600000) / 60000);
+		seconds = floor((totalMili - hours*3600000 - minutes*60000) / 1000);
+		mili = floor((totalMili - hours*3600000 - minutes*60000 - seconds*1000));
+
+	}
+
+	char newTimestamp[30];
+	sprintf(newTimestamp, "%02d:%02d:%02d.%03d", hours, minutes, seconds, mili);
+	string returnTimestamp(newTimestamp);
+
+	return returnTimestamp;
 }
 
 int matchesTimestampFormat(string line){
@@ -136,7 +208,7 @@ int matchesBlankLine(string line){
 	return 0;
 }
 
-vector<srtLine> getSrtLines(char* inputSrt){
+vector<srtLine> getSrtLines(char* inputSrt, float audioOffset, float extraSeconds){
 	ifstream srtStream(inputSrt);
 	
 	int mode = 0; /* mode: 0 if haven't started yet, or looking for sequence number; 1 if found next sequence number; 2 if found timestamp; 3 if found text subtitle; back to 0 if found blank line */
@@ -145,8 +217,8 @@ vector<srtLine> getSrtLines(char* inputSrt){
 	string line;
 	vector<srtLine> srtLines;
 
-	int startPoint;
-	int endPoint;
+	string startPoint;
+	string endPoint;
 	vector<string> messages;
 
 	while(getline(srtStream, line)){
@@ -175,8 +247,8 @@ vector<srtLine> getSrtLines(char* inputSrt){
 				mode = 2;
 				
 				/* Get timestamp start and end in seconds */
-				startPoint = getTimestampStart(line);
-				endPoint = getTimestampEnd(line);
+				startPoint = getTimestampStart(line, audioOffset, extraSeconds);
+				endPoint = getTimestampEnd(line, audioOffset, extraSeconds);
 			}
 			break;
 
@@ -247,18 +319,9 @@ void clipAudio(char* inputAudio, vector<srtLine> srtLines, char* outputFolder, i
 
 	char commandChr[300];
 
-	int startClip;
-	int endClip;
 	
 	for(int i=0; i<srtLines.size(); i++){
-		startClip = srtLines[i].start + secondsOffset - extraSeconds;
-		endClip = srtLines[i].end + secondsOffset + extraSeconds;
-
-		if(startClip < 0){
-			startClip = 0;
-		}
-
-		sprintf(commandChr, "ffmpeg -y -i %s -ss %d -to %d %s/output-%d.wav -loglevel \"error\"", inputAudioStr.c_str(), startClip, endClip, outputFolderStr.c_str(), i);
+		sprintf(commandChr, "ffmpeg -y -i %s -ss %s -to %s %s/output-%d.wav -loglevel \"error\"", inputAudioStr.c_str(), srtLines[i].start.c_str(), srtLines[i].end.c_str(), outputFolderStr.c_str(), i);
 		//cout << "Running command: " << commandChr << endl;
 		system(commandChr);
 	}
@@ -315,31 +378,6 @@ void mergeTTSandAudio(vector<srtLine> srtLines, char* outputFolder){
 
 int main(int argc, char* argv[]){
 
-	/*
-	if(argc < 4){
-		cout << "Not enough input arguments. Usage: ./audio_clip_generator input_audio.wav input_subtitles.srt output_folder" << endl;
-		cout << "You can also specify the audio offset (integer) and extra seconds (integer) before and after each audio clip. Usage: ./audio_clip_generator input_audio.wav input_subtitles.srt output_folder audio_offset extra_seconds" << endl;
-		return -1;
-	}
-
-	int secondsOffset = 0;
-
-	if(argc > 4){
-		secondsOffset = atoi(argv[4]);
-	}
-
-	int extraSeconds = 0;
-
-	if(argc > 5){
-		extraSeconds = atoi(argv[5]);
-	}
-
-	int res = initialChecks(argv[1], argv[2]);
-	if(res < 0){
-		return res;
-	}
-	*/
-
 	bool foundAudioFile = false;
 	bool foundSubtitleFile = false;
 	bool foundOutputFolder = false;
@@ -350,64 +388,59 @@ int main(int argc, char* argv[]){
 	int audioFileIdx;
 	int subtitleFileIdx;
 	int outputFolderIdx;
-	int audioOffset = 0;
-	int extraSeconds = 0;
+	float audioOffset = 0;
+	float extraSeconds = 0;
 
-	if(argc < 6){
-		cout << "Not enough input arguments." << endl;
-		cout << "Usage: ./audio_clip_generator -i input_audio.wav -s input_subtitles.srt -o output_folder" << endl;
-		cout << "Run ./audio_clip_generator -h for help." << endl;
-		return -1;
-	}
-
-	for(int i=1; i<argc-1; i++){
+	for(int i=1; i<argc; i++){
 
 		cout << "For loop checking input args: " << i << endl;
 
-		/* Check for audio file */
-		if(strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "--input") == 0){
-			fstream fs;
-			fs.open(argv[i+1]);
-			if(fs.is_open()){
-				foundAudioFile = true;
-				audioFileIdx = i+1;
-			} else {
-				cout << "Error occurred for argument " << i << ":" << argv[i+1] << endl;
-				cout << "Audio file could not be opened. Exiting." << endl;
-				return 0;
+		if(i < argc - 1){
+			/* Check for audio file */
+			if(strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "--input") == 0){
+				fstream fs;
+				fs.open(argv[i+1]);
+				if(fs.is_open()){
+					foundAudioFile = true;
+					audioFileIdx = i+1;
+				} else {
+					cout << "Error occurred for argument " << i << ":" << argv[i+1] << endl;
+					cout << "Audio file could not be opened. Exiting." << endl;
+					return 0;
+				}
 			}
-		}
 
-		/* Check for subtitle file */
-		if(strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--sub") == 0){
-			fstream fs;
-			fs.open(argv[i+1]);
-			if(fs.is_open()){
-				foundSubtitleFile = true;
-				subtitleFileIdx = i+1;
-			} else {
-				cout << "Error occurred for argument " << i << ":" << argv[i+1] << endl;
-				cout << "Subtitle file could not be opened. Exiting." << endl;
-				return 0;
+			/* Check for subtitle file */
+			if(strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--sub") == 0){
+				fstream fs;
+				fs.open(argv[i+1]);
+				if(fs.is_open()){
+					foundSubtitleFile = true;
+					subtitleFileIdx = i+1;
+				} else {
+					cout << "Error occurred for argument " << i << ":" << argv[i+1] << endl;
+					cout << "Subtitle file could not be opened. Exiting." << endl;
+					return 0;
+				}
 			}
-		}
 
-		/* Check for output folder argument */
-		if(strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "--out") == 0){
-			foundOutputFolder = true;
-			outputFolderIdx = i+1;
-		}
+			/* Check for output folder argument */
+			if(strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "--out") == 0){
+				foundOutputFolder = true;
+				outputFolderIdx = i+1;
+			}
 
-		/* Check for audio offset */
-		if(strcmp(argv[i], "-a") == 0 || strcmp(argv[i], "--offset") == 0){
-			foundAudioOffset = true;
-			audioOffset = atoi(argv[i+1]);
-		}
+			/* Check for audio offset */
+			if(strcmp(argv[i], "-a") == 0 || strcmp(argv[i], "--offset") == 0){
+				foundAudioOffset = true;
+				audioOffset = atof(argv[i+1]);
+			}
 
-		/* Check for extra seconds required */
-		if(strcmp(argv[i], "-e") == 0 || strcmp(argv[i], "--extra") == 0){
-			foundExtraSeconds = true;
-			extraSeconds = atoi(argv[i+1]);
+			/* Check for extra seconds required */
+			if(strcmp(argv[i], "-e") == 0 || strcmp(argv[i], "--extra") == 0){
+				foundExtraSeconds = true;
+				extraSeconds = atof(argv[i+1]);
+			}
 		}
 
 		/* Check for verbose */
@@ -419,18 +452,18 @@ int main(int argc, char* argv[]){
 		if(strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0){
 			cout << "Usage: ./audio_clip_generator -i input_audio.wav -s input_subtitles.srt -o output_folder [options]" << endl;
 			cout << "Required arguments:" << endl;
-			cout << "  -i\t\tInput audio file (e.g. audio.wav)" << endl;
+			cout << "  -i\tInput audio file (e.g. audio.wav)" << endl;
 			cout << "    \t\tAlias: --input" << endl;
-			cout << "  -s\t\tInput .srt subtitle file (e.g. subtitles.srt)" << endl;
+			cout << "  -s\tInput .srt subtitle file (e.g. subtitles.srt)" << endl;
 			cout << "    \t\tAlias: --sub" << endl;
-			cout << "  -o\t\tOutput folder (e.g. AudioOutputFolder)" << endl;
+			cout << "  -o\tOutput folder (e.g. AudioOutputFolder)" << endl;
 			cout << "    \t\tAlias: --out" << endl;
 			cout << "Options:" << endl;
-			cout << "  -a\t\tAudio offset (seconds) - e.g. if subtitles occur 1 second before audio, use -a 1" << endl;
+			cout << "  -a\tAudio offset (seconds) - e.g. if subtitles occur 1 second before audio, use -a 1" << endl;
 			cout << "    \t\tAlias: --offset" << endl;
-			cout << "  -e\t\tExtra seconds before and after each audio clip (seconds) - e.g. to capture audio 2 seconds before and after the times specified in subtitle file, use -e 2" << endl;
+			cout << "  -e\tExtra seconds before and after each audio clip (seconds) - e.g. to capture audio 2 seconds before and after the times specified in subtitle file, use -e 2" << endl;
 			cout << "    \t\tAlias: --extra" << endl;
-			cout << "  -v\t\tVerbose mode" << endl;
+			cout << "  -v\tVerbose mode" << endl;
 			cout << "    \t\tAlias: --verbose" << endl;
 			cout << endl;
 		}
@@ -442,7 +475,7 @@ int main(int argc, char* argv[]){
 	}
 
 	cout << "getting srt lines" << endl;
-	vector<srtLine> srtLines = getSrtLines(argv[subtitleFileIdx]);
+	vector<srtLine> srtLines = getSrtLines(argv[subtitleFileIdx], audioOffset, extraSeconds);
 	
 	cout << "Displaying srt lines" << endl;
 	displaySrtLines(srtLines);
@@ -455,6 +488,8 @@ int main(int argc, char* argv[]){
 	
 	cout << "Merging text to speech and clipped audio" << endl;
 	mergeTTSandAudio(srtLines, argv[outputFolderIdx]);
+
+	//mergeAllOutput(srtLines, argv[outputFolderIdx]);
 
 	return 0;
 }
