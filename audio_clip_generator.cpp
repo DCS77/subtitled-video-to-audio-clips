@@ -12,12 +12,14 @@
 #include <algorithm>
 #include <regex>
 #include <cstdlib>
+#include <fstream>
 
 using namespace std;
 
 struct srtLine;
 int initialChecks(char* inputAudio, char* inputSrt);
 int checkAudioFormat();
+bool checkInputs(bool verbose, bool foundAudioFile, bool foundSubtitleFile, bool foundOutputFolder, bool foundAudioOffset, bool foundExtraSeconds);
 int getTimestampStart(string line);
 int getTimestampEnd(string line);
 int matchesTimestampFormat(string line);
@@ -36,22 +38,56 @@ struct srtLine {
 
 int initialChecks(char* inputAudio, char* inputSrt){
 
-	/* Need to check files for compatibility */
-
+	/* Checking files for compatibility */
 	int res = checkAudioFormat();
 	if(res == -1){
-		//cout << "Error checking video format" << endl;
+		cout << "Error checking video format" << endl;
 		return -1;
 	} else if(res == 0){
-		//cout << "Video format not supported" << endl;
+		cout << "Video format not supported" << endl;
 	} else {
-		//cout << "Video format supported" << endl;
+		cout << "Video format supported" << endl;
 	}
 
 	return res;
 }
 
 int checkAudioFormat(){
+	return 1;
+}
+
+bool checkInputs(bool verbose, bool foundAudioFile, bool foundSubtitleFile, bool foundOutputFolder, bool foundAudioOffset, bool foundExtraSeconds){
+	if(verbose){
+		if(foundAudioFile){
+			cout << "Input audio found." << endl;
+		}
+		if(foundSubtitleFile){
+			cout << "Input subtitle found." << endl;
+		}
+		if(foundOutputFolder){
+			cout << "Output folder specified." << endl;
+		}
+		if(foundAudioOffset){
+			cout << "Audio offset specified." << endl;
+		}
+		if(foundExtraSeconds){
+			cout << "Extra seconds specified." << endl;
+		}
+	}
+	
+	if(!foundAudioFile){
+		cout << "Error: Input audio not specified correctly. Exiting." << endl;
+		return 0;
+	}
+	if(!foundSubtitleFile){
+		cout << "Error: Input srt subtitle file not specified correctly. Exiting." << endl;
+		return 0;
+	}
+	if(!foundOutputFolder){
+		cout << "Error: Output folder not specified correctly. Exiting." << endl;
+		return 0;
+	}
+
 	return 1;
 }
 
@@ -81,7 +117,7 @@ int getTimestampEnd(string line){
 }
 
 int matchesTimestampFormat(string line){
-	/* "00:00:16,391 --> 00:00:19,476" */
+	/* Expected srt format: "HH:MM:SS,mmm --> HH:MM:SS,mmm" */
 	if (regex_match (line, regex("([0-9]{2}(:)){2}[0-9]{2}(,)[0-9]{3}( --> )([0-9]{2}(:)){2}[0-9]{2}(,)[0-9]{3}") )){
 		return 1;
 	}
@@ -115,13 +151,8 @@ vector<srtLine> getSrtLines(char* inputSrt){
 
 	while(getline(srtStream, line)){
 
-		//cout << "\n\n\nWhile loop: currentIdx: " << currentIdx << endl;
-		//cout << "Line: " << line << endl;
-
 		line.erase(std::remove(line.begin(), line.end(), '\n'), line.end());
 		line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
-
-		//cout << "TP1: mode: " << mode << endl;
 		
 		switch(mode){
 
@@ -191,8 +222,6 @@ vector<srtLine> getSrtLines(char* inputSrt){
 				stringIdx++;
 			}
 		}
-		//char c;
-		//cin>>c;
 	}
 
 	return srtLines;
@@ -202,14 +231,9 @@ void displaySrtLines(vector<srtLine> srtLines){
 	cout << "srtLines.size(): " << srtLines.size() << endl;
 
 	for(int i=0; i<srtLines.size(); i++){
-		//char c;
-		//cin>>c;
 		cout << "start: " << srtLines[i].start << endl;
-		//cin>>c;
 		cout << "end: " <<  srtLines[i].end << endl;
-		//cin>>c;
 		cout << "message 0: " <<  srtLines[i].messages[0] << endl;
-		
 	}
 }
 
@@ -254,7 +278,6 @@ void generateTextToSpeech(vector<srtLine> srtLines, char* outputFolder){
 		for(int j=0; j<srtLines[i].messages.size(); j++){
 			textMessage = textMessage + srtLines[i].messages[j];
 		}
-		//sprintf(commandChr, "espeak \"%s\" --stdout > %s/tts-output-%d.wav", textMessage.c_str(), outputFolderStr.c_str(), i);
 		sprintf(commandChr, "espeak \"%s\" --stdout > %s/tts-output-%d.wav", textMessage.c_str(), outputFolder, i);
 		//cout << "Running command: " << commandChr << endl;
 		system(commandChr);
@@ -282,12 +305,17 @@ void mergeTTSandAudio(vector<srtLine> srtLines, char* outputFolder){
 
 		//cout << "Running command: ffmpeg concat: " << i << endl;
 		system(commandChr);
+
+		sprintf(commandChr, "rm %s %s", ttsFile, audioFile);
+
+		system(commandChr);
 	}
 }
 
 
 int main(int argc, char* argv[]){
 
+	/*
 	if(argc < 4){
 		cout << "Not enough input arguments. Usage: ./audio_clip_generator input_audio.wav input_subtitles.srt output_folder" << endl;
 		cout << "You can also specify the audio offset (integer) and extra seconds (integer) before and after each audio clip. Usage: ./audio_clip_generator input_audio.wav input_subtitles.srt output_folder audio_offset extra_seconds" << endl;
@@ -310,16 +338,123 @@ int main(int argc, char* argv[]){
 	if(res < 0){
 		return res;
 	}
+	*/
 
-	vector<srtLine> srtLines = getSrtLines(argv[2]);
+	bool foundAudioFile = false;
+	bool foundSubtitleFile = false;
+	bool foundOutputFolder = false;
+	bool foundAudioOffset = false;
+	bool foundExtraSeconds = false;
+	bool verbose = false;
+
+	int audioFileIdx;
+	int subtitleFileIdx;
+	int outputFolderIdx;
+	int audioOffset = 0;
+	int extraSeconds = 0;
+
+	if(argc < 6){
+		cout << "Not enough input arguments." << endl;
+		cout << "Usage: ./audio_clip_generator -i input_audio.wav -s input_subtitles.srt -o output_folder" << endl;
+		cout << "Run ./audio_clip_generator -h for help." << endl;
+		return -1;
+	}
+
+	for(int i=1; i<argc-1; i++){
+
+		cout << "For loop checking input args: " << i << endl;
+
+		/* Check for audio file */
+		if(strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "--input") == 0){
+			fstream fs;
+			fs.open(argv[i+1]);
+			if(fs.is_open()){
+				foundAudioFile = true;
+				audioFileIdx = i+1;
+			} else {
+				cout << "Error occurred for argument " << i << ":" << argv[i+1] << endl;
+				cout << "Audio file could not be opened. Exiting." << endl;
+				return 0;
+			}
+		}
+
+		/* Check for subtitle file */
+		if(strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--sub") == 0){
+			fstream fs;
+			fs.open(argv[i+1]);
+			if(fs.is_open()){
+				foundSubtitleFile = true;
+				subtitleFileIdx = i+1;
+			} else {
+				cout << "Error occurred for argument " << i << ":" << argv[i+1] << endl;
+				cout << "Subtitle file could not be opened. Exiting." << endl;
+				return 0;
+			}
+		}
+
+		/* Check for output folder argument */
+		if(strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "--out") == 0){
+			foundOutputFolder = true;
+			outputFolderIdx = i+1;
+		}
+
+		/* Check for audio offset */
+		if(strcmp(argv[i], "-a") == 0 || strcmp(argv[i], "--offset") == 0){
+			foundAudioOffset = true;
+			audioOffset = atoi(argv[i+1]);
+		}
+
+		/* Check for extra seconds required */
+		if(strcmp(argv[i], "-e") == 0 || strcmp(argv[i], "--extra") == 0){
+			foundExtraSeconds = true;
+			extraSeconds = atoi(argv[i+1]);
+		}
+
+		/* Check for verbose */
+		if(strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0){
+			verbose = true;
+		}
+
+		/* Check for help */
+		if(strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0){
+			cout << "Usage: ./audio_clip_generator -i input_audio.wav -s input_subtitles.srt -o output_folder [options]" << endl;
+			cout << "Required arguments:" << endl;
+			cout << "  -i\t\tInput audio file (e.g. audio.wav)" << endl;
+			cout << "    \t\tAlias: --input" << endl;
+			cout << "  -s\t\tInput .srt subtitle file (e.g. subtitles.srt)" << endl;
+			cout << "    \t\tAlias: --sub" << endl;
+			cout << "  -o\t\tOutput folder (e.g. AudioOutputFolder)" << endl;
+			cout << "    \t\tAlias: --out" << endl;
+			cout << "Options:" << endl;
+			cout << "  -a\t\tAudio offset (seconds) - e.g. if subtitles occur 1 second before audio, use -a 1" << endl;
+			cout << "    \t\tAlias: --offset" << endl;
+			cout << "  -e\t\tExtra seconds before and after each audio clip (seconds) - e.g. to capture audio 2 seconds before and after the times specified in subtitle file, use -e 2" << endl;
+			cout << "    \t\tAlias: --extra" << endl;
+			cout << "  -v\t\tVerbose mode" << endl;
+			cout << "    \t\tAlias: --verbose" << endl;
+			cout << endl;
+		}
+	}
+
+	cout << "Checking inputs" << endl;
+	if( !checkInputs(verbose, foundAudioFile, foundSubtitleFile, foundOutputFolder, foundAudioOffset, foundExtraSeconds) ){
+		return 0;
+	}
+
+	cout << "getting srt lines" << endl;
+	vector<srtLine> srtLines = getSrtLines(argv[subtitleFileIdx]);
 	
+	cout << "Displaying srt lines" << endl;
 	displaySrtLines(srtLines);
 
-	clipAudio(argv[1], srtLines, argv[3], secondsOffset, extraSeconds);
+	cout << "Clipping audio" << endl;
+	clipAudio(argv[audioFileIdx], srtLines, argv[outputFolderIdx], audioOffset, extraSeconds);
 
-	generateTextToSpeech(srtLines, argv[3]);
+	cout << "Generating text to speech" << endl;
+	generateTextToSpeech(srtLines, argv[outputFolderIdx]);
 	
-	mergeTTSandAudio(srtLines, argv[3]);
+	cout << "Merging text to speech and clipped audio" << endl;
+	mergeTTSandAudio(srtLines, argv[outputFolderIdx]);
 
 	return 0;
 }

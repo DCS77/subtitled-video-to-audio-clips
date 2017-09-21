@@ -17,12 +17,14 @@ Requirements:
 
 How to use:
 
-[1] - Convert video file to audio:
+[1] - First convert your video file to audio:
 
 ffmpeg -i video.avi -vn audio.wav
 ffmpeg -i video.avi -vn -f mp3 audio.mp3
 
 (Run "ffmpeg --help" to see additional options)
+
+[2] - Then run program
 
 
 
@@ -35,3 +37,10 @@ Video is converted to audio
 Srt file is scanned 
 
 
+
+
+==================
+
+To do:
+Normalise volumes
+Investigate better text to speak voice
