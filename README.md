@@ -18,7 +18,7 @@ ffmpeg -i video.avi -vn -f mp3 audio.mp3
 
 3. Then compile and run program, passing files as inputs
 
-(Pass `-h or --help` to see options)
+(Pass `-h` or `--help` to see options)
 
 ### Prerequisites
 
